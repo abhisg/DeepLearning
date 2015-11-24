@@ -51,6 +51,13 @@ class HiddenLayer(object):
         
         linear_output = numpy.dot(self.x, self.W) + self.b
         return self.activation(linear_output)
+    
+    def output_continuous(self,input=None):
+        if input is not None:
+            self.x = input
+        a_v = numpy.dot(self.x, self.W) + self.b
+        ep = numpy.exp(a_v)
+        return numpy.log((1 - self.rng.rand(a_v.shape[0],a_v.shape[1]) * (1 - ep))) / (a_v+0.000001)
 
 
     def forward(self, input=None):
@@ -91,5 +98,12 @@ class HiddenLayer(object):
                                            n=1,
                                            p=v_mean)
         return h_sample
+    
+    def sample_h_given_v_continuous(self, input=None):
+        if input is not None:
+            self.x = input
+        a_v = numpy.dot(self.x, self.W) + self.b
+        ep = numpy.exp(a_v)
+        return numpy.log((1 - self.rng.rand(a_v.shape[0],a_v.shape[1]) * (1 - ep))) / (a_v+0.000001)
 
 

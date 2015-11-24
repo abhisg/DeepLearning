@@ -4,9 +4,13 @@ import sys
 import numpy
 from HiddenLayer import HiddenLayer
 from LogisticRegression import LogisticRegression
+from sklearn.cross_validation import StratifiedKFold
+from sklearn.metrics import confusion_matrix
+from sklearn import preprocessing
 from RBM import RBM
+from CRBM import CRBM
 from utils import *
-
+import pandas as pd
 
 class DBN(object):
     def __init__(self, input=None, label=None,\
@@ -60,6 +64,7 @@ class DBN(object):
 
 
         # layer for output using Logistic Regression
+        #print self.sigmoid_layers[-1].sample_h_given_v().shape
         self.log_layer = LogisticRegression(input=self.sigmoid_layers[-1].sample_h_given_v(),
                                             label=self.y,
                                             n_in=hidden_layer_sizes[-1],
@@ -80,22 +85,24 @@ class DBN(object):
             rbm = self.rbm_layers[i]
             
             for epoch in xrange(epochs):
-                rbm.contrastive_divergence(lr=lr, k=k, input=layer_input)
-                # cost = rbm.get_reconstruction_cross_entropy()
-                # print >> sys.stderr, \
+                rbm.contrastive_divergence(lr=lr, k=k, input=layer_input,batches=1)
+                #cost = rbm.get_reconstruction_cross_entropy()
+                #print >> sys.stderr, \
                 #        'Pre-training layer %d, epoch %d, cost ' %(i, epoch), cost
 
 
     def finetune(self, lr=0.1, epochs=100):
         layer_input = self.sigmoid_layers[-1].sample_h_given_v()
-
+        print layer_input
+        print numpy.count_nonzero(layer_input)
         # train log_layer
         epoch = 0
         done_looping = False
         while (epoch < epochs) and (not done_looping):
+            #print layer_input.shape
             self.log_layer.train(lr=lr, input=layer_input)
-            # self.finetune_cost = self.log_layer.negative_log_likelihood()
-            # print >> sys.stderr, 'Training epoch %d, cost is ' % epoch, self.finetune_cost
+            self.finetune_cost = self.log_layer.negative_log_likelihood()
+            #print >> sys.stderr, 'Training epoch %d, cost is ' % epoch, self.finetune_cost
             
             lr *= 0.95
             epoch += 1
@@ -106,47 +113,76 @@ class DBN(object):
         
         for i in xrange(self.n_layers):
             sigmoid_layer = self.sigmoid_layers[i]
-            layer_input = sigmoid_layer.output(input=layer_input)
-
+            layer_input = sigmoid_layer.output_continuous(input=layer_input)
+        
         out = self.log_layer.predict(layer_input)
         return out
 
 
 
-def test_dbn(pretrain_lr=0.1, pretraining_epochs=1000, k=1, \
-             finetune_lr=0.1, finetune_epochs=200):
+def test_dbn(pretrain_lr=0.1, pretraining_epochs=500, k=1, \
+             finetune_lr=0.1, finetune_epochs=20):
 
-    x = numpy.array([[1,1,1,0,0,0],
-                     [1,0,1,0,0,0],
-                     [1,1,1,0,0,0],
-                     [0,0,1,1,1,0],
-                     [0,0,1,1,0,0],
-                     [0,0,1,1,1,0]])
-    y = numpy.array([[1, 0],
-                     [1, 0],
-                     [1, 0],
-                     [0, 1],
-                     [0, 1],
-                     [0, 1]])
+    data = pd.read_csv('../../data/alldata.csv',header=None).values
+    n_train = int(1.0*len(data))
+    X = data[:,:-1]
+    X[X>0] = 1
+    X[X<=0] = 0
+    #X = preprocessing.scale(X)
+    #X = (X-numpy.min(X,axis=0))/(numpy.max(X,axis=0)-numpy.min(X,axis=0))
+    #print numpy.count_nonzero(X[:,2])
+    Y = data[:,-1].astype(int)
+    outY = numpy.zeros((X.shape[0],2))
+    for i in xrange(Y.shape[0]):
+        if Y[i] == 1:
+            outY[i][0] = 1
+        else:
+            outY[i][1] = 1
+    outY = numpy.array(outY)
+    #print outY.tolist()
+    #print X.shape,Y.shape
     
     rng = numpy.random.RandomState(123)
-
-    # construct DBN
-    dbn = DBN(input=x, label=y, n_ins=6, hidden_layer_sizes=[3, 3], n_outs=2, rng=rng)
+    kfold = StratifiedKFold(shuffle=True,y=Y[:n_train],n_folds=10)
+    for train_idx,valid_idx in kfold:
+        dbn = DBN(input=X[train_idx,:],label=outY[train_idx,:],n_ins=X.shape[1],hidden_layer_sizes=[5],n_outs=outY.shape[1],rng=rng)
+        dbn.pretrain(lr=pretrain_lr, k=1, epochs=pretraining_epochs)
+        dbn.finetune(lr=finetune_lr, epochs=finetune_epochs)
+        thres = sum(Y[train_idx] == 1)*1.0/(sum(Y[train_idx] == -1) + sum(Y[train_idx] == 1))
+        print thres
+        probs = (dbn.predict(X[train_idx,:]))
+        print probs
+        y_true = Y[train_idx]
+        y_pred = [1 if probs[i][0] > probs[i][1] else -1 for i in xrange(probs.shape[0])]
+        print confusion_matrix(y_true, y_pred)
+    #dbn = DBN(input=X[trainingidx,:], label=outY[trainingidx,:], n_ins=X.shape[1], hidden_layer_sizes=[10,10], n_outs=outY.shape[1], rng=rng)
 
     # pre-training (TrainUnsupervisedDBN)
-    dbn.pretrain(lr=pretrain_lr, k=1, epochs=pretraining_epochs)
+    #dbn.pretrain(lr=pretrain_lr, k=1, epochs=pretraining_epochs)
     
     # fine-tuning (DBNSupervisedFineTuning)
-    dbn.finetune(lr=finetune_lr, epochs=finetune_epochs)
+    #dbn.finetune(lr=finetune_lr, epochs=finetune_epochs)
 
 
     # test
-    x = numpy.array([[1, 1, 0, 0, 0, 0],
-                     [0, 0, 0, 1, 1, 0],
-                     [1, 1, 1, 1, 1, 0]])
-    
-    print dbn.predict(x)
+    #print dbn.predict(X[:n_train]).tolist()
+    """probs = (dbn.predict(X[n_train:]))
+    tp,tn,fp,fn = 0,0,0,0
+    for i in xrange(len(probs)):
+        if probs[i][0] > probs[i][1]:
+            if Y[n_train+i] == 1:
+                tp = tp + 1
+            else:
+                fp = fp + 1
+        else:
+            if Y[n_train+i] == -1:
+                tn = tn + 1
+            else:
+                fn = fn + 1
+    print tp+fn,tn+fp
+    print "Accuracy",(tp+tn)*1.0/(tn+fp+tp+fn)
+    print "Up",tp*1.0/(tp+fp),tp*1.0/(tp+fn)
+    print "Down",tn*1.0/(tn+fn),tn*1.0/(tn+fp)"""
 
 
 

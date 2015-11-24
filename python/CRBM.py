@@ -24,7 +24,7 @@ class CRBM(RBM):
             high=1,
             size=v1_mean.shape))
 
-        v1_sample = numpy.log((1 - U * (1 - ep))) / a_h
+        v1_sample = numpy.log((1 - U * (1 - ep))) / (a_h+0.00001)
 
         return [v1_mean, v1_sample]
 

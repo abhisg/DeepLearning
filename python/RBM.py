@@ -25,10 +25,11 @@ class RBM(object):
             W = initial_W
 
         if hbias is None:
-            hbias = numpy.zeros(n_hidden)  # initialize h bias 0
-
+            #hbias = numpy.random.ranf(n_hidden)  # initialize h bias 0
+            hbias = numpy.zeros(n_hidden)
         if vbias is None:
-            vbias = numpy.zeros(n_visible)  # initialize v bias 0
+            #vbias = numpy.random.ranf(n_visible)  # initialize v bias 0
+            vbias = numpy.zeros(n_visible)
 
 
         self.rng = rng
@@ -38,33 +39,28 @@ class RBM(object):
         self.vbias = vbias
 
 
-    def contrastive_divergence(self, lr=0.1, k=1, input=None):
+    def contrastive_divergence(self, lr=0.0001, k=1, input=None,batches=1):
         if input is not None:
             self.input = input
         
         ''' CD-k '''
-        ph_mean, ph_sample = self.sample_h_given_v(self.input)
-
-        chain_start = ph_sample
-
-        for step in xrange(k):
-            if step == 0:
-                nv_means, nv_samples,\
-                nh_means, nh_samples = self.gibbs_hvh(chain_start)
-            else:
-                nv_means, nv_samples,\
-                nh_means, nh_samples = self.gibbs_hvh(nh_samples)
-
-        # chain_end = nv_samples
-
-
-        self.W += lr * (numpy.dot(self.input.T, ph_mean)
+        batch_size = self.input.shape[0]/batches
+        for batch in xrange(batches):
+            startidx,endidx = batch*batch_size,min((batch+1)*batch_size,self.input.shape[0])
+            sample = self.input[startidx:endidx]
+            ph_mean, ph_sample = self.sample_h_given_v(sample)
+            chain_start = ph_sample
+            for step in xrange(k):
+                if step == 0:
+                    nv_means, nv_samples,\
+                    nh_means, nh_samples = self.gibbs_hvh(chain_start)
+                else:
+                    nv_means, nv_samples,\
+                    nh_means, nh_samples = self.gibbs_hvh(nh_samples)
+            self.W += lr * (numpy.dot(sample.T, ph_mean)
                         - numpy.dot(nv_samples.T, nh_means))
-        self.vbias += lr * numpy.mean(self.input - nv_samples, axis=0)
-        self.hbias += lr * numpy.mean(ph_mean - nh_means, axis=0)
-
-        # cost = self.get_reconstruction_cross_entropy()
-        # return cost
+            self.vbias += lr * numpy.mean(sample - nv_samples, axis=0)
+            self.hbias += lr * numpy.mean(ph_mean - nh_means, axis=0)
 
 
     def sample_h_given_v(self, v0_sample):
@@ -72,8 +68,7 @@ class RBM(object):
         h1_sample = self.rng.binomial(size=h1_mean.shape,   # discrete: binomial
                                        n=1,
                                        p=h1_mean)
-
-        return [h1_mean, h1_sample]
+        return (h1_mean, h1_sample)
 
 
     def sample_v_given_h(self, h0_sample):
@@ -82,7 +77,7 @@ class RBM(object):
                                             n=1,
                                             p=v1_mean)
         
-        return [v1_mean, v1_sample]
+        return (v1_mean, v1_sample)
 
     def propup(self, v):
         pre_sigmoid_activation = numpy.dot(v, self.W) + self.hbias
@@ -97,17 +92,18 @@ class RBM(object):
         v1_mean, v1_sample = self.sample_v_given_h(h0_sample)
         h1_mean, h1_sample = self.sample_h_given_v(v1_sample)
 
-        return [v1_mean, v1_sample,
-                h1_mean, h1_sample]
+        return (v1_mean, v1_sample,
+                h1_mean, h1_sample)
     
 
     def get_reconstruction_cross_entropy(self):
         pre_sigmoid_activation_h = numpy.dot(self.input, self.W) + self.hbias
+        #print pre_sigmoid_activation_h
         sigmoid_activation_h = sigmoid(pre_sigmoid_activation_h)
         
         pre_sigmoid_activation_v = numpy.dot(sigmoid_activation_h, self.W.T) + self.vbias
         sigmoid_activation_v = sigmoid(pre_sigmoid_activation_v)
-
+        #print numpy.count_nonzero(numpy.isinf(sigmoid_activation_h)),numpy.count_nonzero(sigmoid_activation_h==1),sigmoid_activation_h.size
         cross_entropy =  - numpy.mean(
             numpy.sum(self.input * numpy.log(sigmoid_activation_v) +
             (1 - self.input) * numpy.log(1 - sigmoid_activation_v),

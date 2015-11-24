@@ -20,7 +20,7 @@ class LogisticRegression(object):
 
         p_y_given_x = self.output(self.x)
         d_y = self.y - p_y_given_x
-
+        
         self.W += lr * numpy.dot(self.x.T, d_y) - lr * L2_reg * self.W
         self.b += lr * numpy.mean(d_y, axis=0)
         self.d_y = d_y

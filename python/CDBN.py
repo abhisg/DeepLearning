@@ -8,6 +8,7 @@ from RBM import RBM
 from CRBM import CRBM
 from DBN import DBN
 from utils import *
+import pandas as pd
 
  
 class CDBN(DBN):
@@ -79,28 +80,27 @@ class CDBN(DBN):
 
 
 
-def test_cdbn(pretrain_lr=0.1, pretraining_epochs=1000, k=1, \
-             finetune_lr=0.1, finetune_epochs=200):
+def test_cdbn(pretrain_lr=0.1, pretraining_epochs=100, k=1, \
+             finetune_lr=0.1, finetune_epochs=50):
 
-    x = numpy.array([[0.4, 0.5, 0.5, 0.,  0.,  0.],
-                     [0.5, 0.3,  0.5, 0.,  0.,  0.],
-                     [0.4, 0.5, 0.5, 0.,  0.,  0.],
-                     [0.,  0.,  0.5, 0.3, 0.5, 0.],
-                     [0.,  0.,  0.5, 0.4, 0.5, 0.],
-                     [0.,  0.,  0.5, 0.5, 0.5, 0.]])
-    
-    y = numpy.array([[1, 0],
-                     [1, 0],
-                     [1, 0],
-                     [0, 1],
-                     [0, 1],
-                     [0, 1]])
-
+    data = pd.read_csv('../data/alldata.csv',header=None).values
+    n_train = int(0.9*len(data))
+    X = data[:,:-1]
+    Y = data[:,-1].astype(int)
+    outY = numpy.zeros((X.shape[0],2))
+    for i in xrange(Y.shape[0]):
+        if Y[i] == 1:
+            outY[i][0] = 1
+        else:
+            outY[i][1] = 1
+    outY = numpy.array(outY)
+    #print outY.tolist()
+    #print X.shape,Y.shape
     
     rng = numpy.random.RandomState(123)
-
+    #print X[n_train:]
     # construct DBN
-    dbn = CDBN(input=x, label=y, n_ins=6, hidden_layer_sizes=[5, 5], n_outs=2, rng=rng)
+    dbn = CDBN(input=X[:n_train,:], label=outY[:n_train,:], n_ins=X.shape[1], hidden_layer_sizes=[20,10], n_outs=outY.shape[1], rng=rng)
 
     # pre-training (TrainUnsupervisedDBN)
     dbn.pretrain(lr=pretrain_lr, k=1, epochs=pretraining_epochs)
@@ -110,12 +110,26 @@ def test_cdbn(pretrain_lr=0.1, pretraining_epochs=1000, k=1, \
 
 
     # test
-    x = numpy.array([[0.5, 0.5, 0., 0., 0., 0.],
-                     [0., 0., 0., 0.5, 0.5, 0.],
-                     [0.5, 0.5, 0.5, 0.5, 0.5, 0.]])
-
-    
-    print dbn.predict(x)
+    #print dbn.predict(X[:n_train])
+    probs = (dbn.predict(X[n_train:]))
+    print dbn.predict(X[:n_train,:])
+    #print probs
+    tp,tn,fp,fn = 0,0,0,0
+    for i in xrange(len(probs)):
+        if probs[i][0] > probs[i][1]:
+            if Y[i] == 1:
+                tp = tp + 1
+            else:
+                fn = fn + 1
+        else:
+            if Y[i] == -1:
+                tn = tn + 1
+            else:
+                fp = fp + 1
+    print tp+fn,tn+fp
+    print "Accuracy",(tp+tn)*1.0/(tn+fp+tp+fn)
+    print "Up",tp*1.0/(tp+fp),tp*1.0/(tp+fn)
+    print "Down",tn*1.0/(tn+fn),tn*1.0/(tn+fp)
 
 
 

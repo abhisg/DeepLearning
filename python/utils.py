@@ -11,7 +11,7 @@ def dsigmoid(x):
     return x * (1. - x)
 
 def tanh(x):
-    return numpy.tanh(x)
+    return 2. / (1 + numpy.exp(-2*x)) -1
 
 def dtanh(x):
     return 1. - x * x
